@@ -1,0 +1,160 @@
+cat <<'EOF' | sudo tee /usr/local/sbin/limpia-logs.sh >/dev/null && sudo chmod +x /usr/local/sbin/limpia-logs.sh && sudo /usr/local/sbin/limpia-logs.sh "${1:-}"
+#!/bin/bash
+# ==========================================================
+# Script de limpieza avanzada de logs y control de espacio
+#  - Limpieza de httpd, php-fpm y systemd-journal
+#  - Borra logs rotados y comprimidos antiguos
+#  - Compacta y purga journalctl >7 días o >100 MB
+#  - Configura rotación diaria de Apache (7 días)
+#  - Programa tarea automática cada 2 días (03:00)
+#  - Opción --full: limpieza agresiva, sin límite de días
+# ==========================================================
+
+set -euo pipefail
+LOGFILE="/var/log/limpieza_logs.log"
+DISK_THRESHOLD=85
+
+have_cmd() { command -v "$1" >/dev/null 2>&1; }
+as_root() { [ "$EUID" -ne 0 ] && have_cmd sudo && sudo "$@" || "$@"; }
+resolve_path() { have_cmd realpath && realpath "$1" || (have_cmd readlink && readlink -f "$1" 2>/dev/null || echo "$1"); }
+ensure_logfile() { as_root touch "$LOGFILE"; as_root chmod 0644 "$LOGFILE"; }
+
+install_cron_if_needed() {
+  local svc=""
+  if have_cmd crontab; then
+    echo "✅ crontab ya está disponible." | tee -a "$LOGFILE"
+  else
+    echo "ℹ️ Instalando cron..." | tee -a "$LOGFILE"
+    if have_cmd dnf; then as_root dnf install -y cronie; svc="crond";
+    elif have_cmd yum; then as_root yum install -y cronie; svc="crond";
+    elif have_cmd apt-get; then as_root apt-get update -y; DEBIAN_FRONTEND=noninteractive as_root apt-get install -y cron; svc="cron";
+    elif have_cmd zypper; then as_root zypper --non-interactive install cron; svc="cron";
+    else echo "❌ No se detectó un gestor de paquetes compatible." | tee -a "$LOGFILE"; exit 1; fi
+  fi
+  if have_cmd systemctl; then
+    [ -z "${svc:-}" ] && { have_cmd rpm || have_cmd dnf || have_cmd yum && svc="crond" || svc="cron"; }
+    echo "🔧 Habilitando servicio $svc..." | tee -a "$LOGFILE"
+    as_root systemctl enable "$svc" >/dev/null 2>&1 || true
+    as_root systemctl start "$svc" || true
+  fi
+}
+
+ensure_cron_entry_every_2_days() {
+  local script_path="$1"
+  local marker="# limpia-logs-cada-2-dias"
+  local cron_line="0 3 */2 * * /bin/bash $script_path >> $LOGFILE 2>&1 $marker"
+  local current_cron
+  current_cron="$(as_root crontab -l -u root 2>/dev/null || true)"
+  if echo "$current_cron" | grep -F "$marker" >/dev/null 2>&1; then
+    echo "✅ Cron ya registrado." | tee -a "$LOGFILE"
+  else
+    ( echo "$current_cron"; echo "$cron_line" ) | as_root crontab -u root -
+    echo "🗓️ Registrada tarea en crontab de root." | tee -a "$LOGFILE"
+  fi
+}
+
+ensure_apache_logrotate() {
+  local conf="/etc/logrotate.d/httpd"
+  if [ -d /etc/logrotate.d ]; then
+    echo "🔧 Ajustando configuración de logrotate para Apache..." | tee -a "$LOGFILE"
+    as_root bash -c "cat > $conf" <<'CFG'
+/var/log/httpd/*log {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    sharedscripts
+    postrotate
+        /bin/systemctl reload httpd.service > /dev/null 2>/dev/null || true
+    endscript
+}
+CFG
+  fi
+}
+
+limpieza_full() {
+    echo -e "\n[4b] Limpieza FULL de logs (sin límite de días)..." | tee -a "$LOGFILE"
+    for dir in /var/log/httpd /var/log/php-fpm; do
+        [ -d "$dir" ] || continue
+        as_root find "$dir" -type f \( -name "*.gz" -o -name "*.1" -o -name "*.old" -o -name "*-*.log" \) \
+            -exec rm -f {} \; -exec echo "→ Eliminado: {}" \; | tee -a "$LOGFILE"
+        if [ "$dir" == "/var/log/httpd" ]; then
+            as_root rm -f "$dir"/access_log-* "$dir"/error_log-* 2>/dev/null && echo "→ Eliminados todos los logs antiguos de Apache" | tee -a "$LOGFILE"
+        fi
+    done
+
+    echo -e "\n[4c] Truncando logs activos nuevamente..." | tee -a "$LOGFILE"
+    for dir in /var/log/httpd /var/log/php-fpm; do
+        [ -d "$dir" ] || continue
+        for log in "$dir"/*.log; do
+            [ -f "$log" ] || continue
+            as_root truncate -s 0 "$log"
+            echo "→ Truncado: $log" | tee -a "$LOGFILE"
+        done
+    done
+}
+
+# --- Inicio ejecución ---
+ensure_logfile
+echo "================================================" | tee -a "$LOGFILE"
+echo "🕒 Ejecución: $(date '+%Y-%m-%d %H:%M:%S')" | tee -a "$LOGFILE"
+echo "================================================" | tee -a "$LOGFILE"
+
+install_cron_if_needed
+ensure_apache_logrotate
+SCRIPT_ABS_PATH="$(resolve_path "$0")"
+ensure_cron_entry_every_2_days "$SCRIPT_ABS_PATH"
+
+echo -e "\n[0] Espacio en disco:" | tee -a "$LOGFILE"
+df -h | tee -a "$LOGFILE"
+
+echo -e "\n[1] Top de consumo en /var:" | tee -a "$LOGFILE"
+as_root du -h --max-depth=1 /var | sort -hr | tee -a "$LOGFILE"
+
+echo -e "\n[2] Top de consumo en /var/log:" | tee -a "$LOGFILE"
+as_root du -h --max-depth=1 /var/log | sort -hr | head -20 | tee -a "$LOGFILE"
+
+echo -e "\n[3] Limpiando logs activos..." | tee -a "$LOGFILE"
+for dir in /var/log/httpd /var/log/php-fpm; do
+  [ -d "$dir" ] || continue
+  for log in "$dir"/*.log; do
+    [ -f "$log" ] || continue
+    as_root truncate -s 0 "$log"
+    echo "→ Truncado: $log" | tee -a "$LOGFILE"
+  done
+done
+
+echo -e "\n[4] Eliminando logs rotados y comprimidos antiguos (>7 días)..." | tee -a "$LOGFILE"
+for dir in /var/log/httpd /var/log/php-fpm; do
+  [ -d "$dir" ] || continue
+  as_root find "$dir" -type f \( -name "*.gz" -o -name "*.1" -o -name "*.old" -o -name "*-*.log" \) -mtime +7 \
+    -exec rm -f {} \; -exec echo "→ Eliminado: {}" \; | tee -a "$LOGFILE"
+done
+
+if [ "${1:-}" == "--full" ]; then
+    limpieza_full
+fi
+
+echo -e "\n[5] Compactando y purgando systemd-journal..." | tee -a "$LOGFILE"
+if have_cmd journalctl; then
+  echo "→ Purga de journals mayores a 7 días..." | tee -a "$LOGFILE"
+  as_root journalctl --vacuum-time=7d | tee -a "$LOGFILE" || true
+  echo "→ Reducción a máximo 100 MB..." | tee -a "$LOGFILE"
+  as_root journalctl --vacuum-size=100M | tee -a "$LOGFILE" || true
+  journalctl --disk-usage | tee -a "$LOGFILE" || true
+else
+  echo "journalctl no disponible." | tee -a "$LOGFILE"
+fi
+
+echo -e "\n[6] Verificando uso de disco..." | tee -a "$LOGFILE"
+USO="$(df / | tail -1 | awk '{print $5}' | sed 's/%//')"
+if [ "${USO:-0}" -ge "$DISK_THRESHOLD" ]; then
+  echo "⚠️ ALERTA: Disco / al ${USO}%!" | tee -a "$LOGFILE"
+else
+  echo "✅ Uso de disco dentro del umbral (${USO}% < ${DISK_THRESHOLD}%)." | tee -a "$LOGFILE"
+fi
+
+echo -e "\n✅ Limpieza completada.\n" | tee -a "$LOGFILE"
+EOF

@@ -1,0 +1,152 @@
+---
+const state = Astro.props.state ?? {
+  data: { username: "", email: "", password: "" },
+  zodErrors: null,
+  strapiErrors: null,
+};
+
+---
+
+<div class="w-full max-w-md mx-auto">
+  <form id="signup-form" method="post" action="/api/register" class="space-y-4" novalidate>
+    <div class="bg-white p-6 rounded-lg shadow">
+      <div class="mb-4 space-y-1">
+        <h1 class="text-3xl font-bold text-pink-500">Sign Up</h1>
+        <p class="text-sm text-gray-500">Enter your details to create a new account</p>
+      </div>
+
+      <div class="space-y-4">
+        <!-- Username -->
+        <div class="space-y-2">
+          <label for="username" class="block text-sm font-medium">Username</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            placeholder="username"
+            autocomplete="username"
+            required
+            minlength="3"
+            maxlength="30"
+            class="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500"
+          />
+          <p id="err-username" class="text-pink-500 text-xs italic hidden"></p>
+        </div>
+
+        <!-- Email -->
+        <div class="space-y-2">
+          <label for="email" class="block text-sm font-medium">Email</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            placeholder="name@example.com"
+            autocomplete="email"
+            required
+            class="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500"
+          />
+          <p id="err-email" class="text-pink-500 text-xs italic hidden"></p>
+        </div>
+
+        <!-- Password -->
+        <div class="space-y-2">
+          <label for="password" class="block text-sm font-medium">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            placeholder="password"
+            autocomplete="new-password"
+            required
+            minlength="8"
+            class="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500"
+          />
+          <p id="err-password" class="text-pink-500 text-xs italic hidden"></p>
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <button
+          type="submit"
+          class="w-full bg-black text-white py-2 rounded-md hover:bg-gray-800 transition"
+        >
+          Sign Up
+        </button>
+      </div>
+    </div>
+
+    <div class="mt-4 text-center text-sm">
+      Have an account?
+      <a href="/auth/signin" class="ml-2 text-pink-500 hover:underline">Sign In</a>
+    </div>
+  </form>
+</div>
+
+<script>
+  const form = document.querySelector('#signup-form');
+
+  const map = [
+    { input: 'username', err: 'err-username', label: 'Username' },
+    { input: 'email', err: 'err-email', label: 'Email' },
+    { input: 'password', err: 'err-password', label: 'Password' },
+  ];
+  
+
+  function setError(inputEl: HTMLInputElement | null, errEl: HTMLElement | null, message: string) {
+    if (!inputEl || !errEl) return;
+    errEl.textContent = message;
+    errEl.classList.toggle('hidden', !message);
+    inputEl.classList.toggle('border-pink-500', !!message);
+  }
+
+  function validateField(inputEl: HTMLInputElement | null, errEl: HTMLElement | null, label: string) {
+    if (!inputEl) return false;
+
+    if (inputEl.validity.valueMissing) {
+      setError(inputEl, errEl, `${label} is required.`);
+      return false;
+    }
+    if (inputEl.validity.tooShort) {
+      setError(inputEl, errEl, `${label} is too short.`);
+      return false;
+    }
+    if (inputEl.validity.typeMismatch) {
+      setError(inputEl, errEl, `Please enter a valid ${label.toLowerCase()}.`);
+      return false;
+    }
+
+    // Regla extra password
+    if (inputEl.name === 'password' && inputEl.value && inputEl.value.length < 8) {
+      setError(inputEl, errEl, 'Password must be at least 8 characters.');
+      return false;
+    }
+
+    setError(inputEl, errEl, '');
+    return true;
+  }
+
+  // Validar en vivo
+  map.forEach(({ input, err, label }) => {
+    const inputEl = document.getElementById(input) as HTMLInputElement | null;
+    const errEl = document.getElementById(err);
+    if (!inputEl) return;
+
+    inputEl.addEventListener('input', () => validateField(inputEl, errEl, label));
+    inputEl.addEventListener('blur', () => validateField(inputEl, errEl, label));
+  });
+
+  // Antes de enviar
+  if (form instanceof HTMLFormElement) {
+    form.addEventListener('submit', (e) => {
+      let ok = true;
+
+      map.forEach(({ input, err, label }) => {
+        const inputEl = document.getElementById(input) as HTMLInputElement | null;
+        const errEl = document.getElementById(err);
+        if (!validateField(inputEl, errEl, label)) ok = false;
+      });
+
+      if (!ok) e.preventDefault();
+    });
+  }
+</script>

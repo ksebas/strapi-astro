@@ -1,0 +1,19 @@
+---
+
+import Welcome from '../components/Welcome.astro';
+import Layout from '../layouts/Layout.astro';
+import { getHomePage } from "../lib/strapi";
+
+const strapiData = await getHomePage();
+
+const { title, description } = strapiData;
+
+	
+---
+
+<Layout title={title}>
+	<Welcome />
+</Layout>
+
+
+

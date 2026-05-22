@@ -1,0 +1,24 @@
+---
+import { getHomePage } from "../lib/strapi";
+import HeroSection from "./Hero-section.astro";
+
+
+const strapiData = await getHomePage();
+
+const { title, description, hero } = strapiData;
+
+const BASE_URL = import.meta.env.STRAPI_URL;
+
+const heroBlock = hero?.[0];
+---
+
+<div class="container mx-auto py-12 px-4">
+  <h1 class="text-4xl font-bold text-center mb-4 text-blue-600">{title}</h1>
+  <p class="text-lg text-center text-gray-700">{description}</p>
+
+  
+  {heroBlock ? (
+    <HeroSection data={heroBlock} baseUrl={BASE_URL} />
+  ) : null}
+
+</div>

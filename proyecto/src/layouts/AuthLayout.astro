@@ -1,0 +1,15 @@
+---
+const { title = "Auth" } = Astro.props;
+import '../styles/global.css'
+---
+
+<html>
+  <head>
+    <title>{title}</title>
+  </head>
+  <body class="flex items-center justify-center min-h-screen bg-gray-100">
+    <div class="bg-white p-6 rounded shadow w-full max-w-md">
+      <slot />
+    </div>
+  </body>
+</html>
