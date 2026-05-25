@@ -1,7 +1,7 @@
 
 import { registerUserAction } from "./auth";
 
-export const actions = {
+export const server = {
   auth: {
     registerUserAction
   }
