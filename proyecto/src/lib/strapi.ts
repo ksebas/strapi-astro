@@ -27,6 +27,34 @@ export async function getHomePage() {
 }
 
 
+export interface StrapiUser {
+    id: number;
+    username: string;
+    email: string;
+    provider?: string;
+    confirmed?: boolean;
+    blocked?: boolean;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export async function getMe(jwt: string): Promise<StrapiUser | null> {
+    try {
+        const response = await fetch(`${BASE_URL}/api/users/me`, {
+            headers: {
+                Authorization: `Bearer ${jwt}`,
+            },
+        });
+        if (!response.ok) {
+            return null;
+        }
+        return (await response.json()) as StrapiUser;
+    } catch (error) {
+        console.error('Error fetching current user from Strapi:', error);
+        return null;
+    }
+}
+
 export async function getStrapiData(url: string) {
     try {   
 	const response = await fetch(`${BASE_URL}${url}`);

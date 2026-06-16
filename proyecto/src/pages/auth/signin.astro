@@ -1,8 +1,14 @@
 ---
 import SignInForm from '../../components/Sign-in-form.astro';
 import AuthLayout from '../../layouts/AuthLayout.astro';
+
+export const prerender = false;
+
+const error = Astro.url.searchParams.get("error");
+const identifier = Astro.url.searchParams.get("identifier") ?? "";
+const registered = Astro.url.searchParams.get("registered");
 ---
 
 <AuthLayout title="Login">
-    <SignInForm />
+    <SignInForm error={error} identifier={identifier} registered={registered} />
 </AuthLayout>

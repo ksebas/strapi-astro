@@ -1,10 +1,5 @@
 ---
-const state = Astro.props.state ?? {
-  data: { username: "", email: "", password: "" },
-  zodErrors: null,
-  strapiErrors: null,
-};
-
+const { error = null, username = "", email = "" } = Astro.props;
 ---
 
 <div class="w-full max-w-md mx-auto">
@@ -15,6 +10,13 @@ const state = Astro.props.state ?? {
         <p class="text-sm text-gray-500">Enter your details to create a new account</p>
       </div>
 
+      <!-- Error banner (server: username/email already taken, etc.) -->
+      {error && (
+        <div role="alert" class="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       <div class="space-y-4">
         <!-- Username -->
         <div class="space-y-2">
@@ -23,6 +25,7 @@ const state = Astro.props.state ?? {
             id="username"
             name="username"
             type="text"
+            value={username}
             placeholder="username"
             autocomplete="username"
             required
@@ -40,6 +43,7 @@ const state = Astro.props.state ?? {
             id="email"
             name="email"
             type="email"
+            value={email}
             placeholder="name@example.com"
             autocomplete="email"
             required

@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import { getMe } from "../lib/strapi";
 
 export const prerender = false;
 
@@ -9,10 +10,222 @@ const title = "Dashboard";
 if (!jwt) {
   return Astro.redirect("/auth/signin");
 }
+
+const user = await getMe(jwt);
+
+// If the token is expired or invalid, Strapi returns no user -> back to login.
+if (!user) {
+  Astro.cookies.delete("jwt", { path: "/" });
+  return Astro.redirect("/auth/signin");
+}
+
+const initial = (user.username || user.email || "?").charAt(0).toUpperCase();
+
+const fmtDate = (d?: string) =>
+  d
+    ? new Date(d).toLocaleDateString("en-US", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      })
+    : "—";
+
+const memberSince = fmtDate(user.createdAt);
+const lastUpdate = fmtDate(user.updatedAt);
+
+// Greeting based on the time of day
+const hour = new Date().getHours();
+const greeting =
+  hour < 12 ? "Good morning" : hour < 19 ? "Good afternoon" : "Good evening";
+const todayLabel = new Date().toLocaleDateString("en-US", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
 ---
-<Layout title={title}>  
-<div class="p-6">
-  <h1 class="text-2xl font-bold">Dashboard</h1>
-  <p class="text-gray-600">Sesión activa ✅</p>
-</div>
+
+<Layout title={title}>
+  <div class="flex min-h-screen bg-gray-50 text-gray-900">
+    <!-- ===== Sidebar ===== -->
+    <aside class="hidden w-64 shrink-0 flex-col border-r border-gray-200 bg-white md:flex">
+      <div class="flex h-16 items-center gap-2 border-b border-gray-100 px-6">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold text-white">
+          P
+        </div>
+        <span class="text-base font-semibold tracking-tight">ProyectoA</span>
+      </div>
+
+      <nav class="flex-1 space-y-1 px-3 py-4 text-sm">
+        <a
+          href="/dashboard"
+          class="flex items-center gap-3 rounded-lg bg-indigo-50 px-3 py-2 font-medium text-indigo-700"
+        >
+          Home
+        </a>
+        <span class="flex cursor-default items-center gap-3 rounded-lg px-3 py-2 text-gray-400">
+          Profile
+          <span class="ml-auto rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase">Soon</span>
+        </span>
+        <span class="flex cursor-default items-center gap-3 rounded-lg px-3 py-2 text-gray-400">
+          Settings
+          <span class="ml-auto rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase">Soon</span>
+        </span>
+      </nav>
+
+      <div class="border-t border-gray-100 p-3">
+        <div class="flex items-center gap-3 rounded-lg px-2 py-2">
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">
+            {initial}
+          </div>
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium">{user.username}</p>
+            <p class="truncate text-xs text-gray-500">{user.email}</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== Content ===== -->
+    <div class="flex min-w-0 flex-1 flex-col">
+      <!-- Topbar -->
+      <header class="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-gray-200 bg-white/80 px-6 backdrop-blur">
+        <div>
+          <h1 class="text-lg font-semibold tracking-tight">Dashboard</h1>
+          <p class="text-xs text-gray-400">{todayLabel}</p>
+        </div>
+        <form method="POST" action="/api/logout">
+          <button
+            type="submit"
+            class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          >
+            Sign out
+          </button>
+        </form>
+      </header>
+
+      <main class="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
+        <!-- Greeting -->
+        <div class="mb-8">
+          <h2 class="text-2xl font-bold tracking-tight">
+            {greeting}, {user.username}
+          </h2>
+          <p class="mt-1 text-sm text-gray-500">
+            Welcome back to your dashboard.
+          </p>
+        </div>
+
+        <!-- Summary cards -->
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Status</p>
+            <p class="mt-2 text-lg font-semibold">
+              {user.confirmed ? "Account confirmed" : "Not confirmed"}
+            </p>
+            <p class="mt-1 text-xs text-gray-500">
+              {user.blocked ? "Access blocked" : "Access active"}
+            </p>
+          </div>
+
+          <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Member since</p>
+            <p class="mt-2 text-lg font-semibold">{memberSince}</p>
+            <p class="mt-1 text-xs text-gray-500">Last activity: {lastUpdate}</p>
+          </div>
+
+          <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Sign-in method</p>
+            <p class="mt-2 text-lg font-semibold capitalize">{user.provider ?? "local"}</p>
+            <p class="mt-1 text-xs text-gray-500">User ID #{user.id}</p>
+          </div>
+        </div>
+
+        <!-- Profile + quick actions -->
+        <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <!-- Profile card -->
+          <section class="lg:col-span-2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div class="flex items-center gap-4 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-white p-6">
+              <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-2xl font-bold text-white shadow-md">
+                {initial}
+              </div>
+              <div class="min-w-0">
+                <p class="truncate text-xl font-semibold">{user.username}</p>
+                <p class="truncate text-sm text-gray-500">{user.email}</p>
+              </div>
+            </div>
+
+            <dl class="grid grid-cols-1 gap-px bg-gray-100 sm:grid-cols-2">
+              <div class="bg-white p-5">
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">Username</dt>
+                <dd class="mt-1 text-sm font-medium text-gray-900">{user.username}</dd>
+              </div>
+              <div class="bg-white p-5">
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">Email</dt>
+                <dd class="mt-1 text-sm font-medium text-gray-900">{user.email}</dd>
+              </div>
+              <div class="bg-white p-5">
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">ID</dt>
+                <dd class="mt-1 text-sm font-medium text-gray-900">#{user.id}</dd>
+              </div>
+              <div class="bg-white p-5">
+                <dt class="text-xs font-medium uppercase tracking-wide text-gray-400">Status</dt>
+                <dd class="mt-1 text-sm font-medium">
+                  {
+                    user.confirmed ? (
+                      <span class="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
+                        Confirmed
+                      </span>
+                    ) : (
+                      <span class="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-700">
+                        Pending
+                      </span>
+                    )
+                  }
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <!-- Quick actions -->
+          <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <h3 class="text-sm font-semibold text-gray-900">Quick actions</h3>
+            <p class="mt-1 text-xs text-gray-500">Available actions</p>
+
+            <div class="mt-4 space-y-2">
+              <a
+                href="http://localhost:1337/admin"
+                target="_blank"
+                rel="noreferrer"
+                class="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 transition hover:border-indigo-300 hover:bg-indigo-50"
+              >
+                Strapi panel
+                <span class="ml-auto text-gray-300">&rarr;</span>
+              </a>
+              <a
+                href={`mailto:${user.email}`}
+                class="flex items-center gap-3 rounded-xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 transition hover:border-indigo-300 hover:bg-indigo-50"
+              >
+                Send email
+                <span class="ml-auto text-gray-300">&rarr;</span>
+              </a>
+              <form method="POST" action="/api/logout">
+                <button
+                  type="submit"
+                  class="flex w-full items-center gap-3 rounded-xl border border-red-200 px-4 py-3 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                >
+                  Sign out
+                  <span class="ml-auto text-red-300">&rarr;</span>
+                </button>
+              </form>
+            </div>
+          </section>
+        </div>
+
+        <footer class="mt-10 text-center text-xs text-gray-400">
+          ProyectoA &middot; Secure session &middot;
+          {new Date().getFullYear()}
+        </footer>
+      </main>
+    </div>
+  </div>
 </Layout>
